@@ -50,7 +50,7 @@ from vanna.chromadb.chromadb_vector import ChromaDB_VectorStore
 from vanna.qianwen.QianwenAI_chat import QianWenAI_Chat
 
 #设置当前app.py文件所在目录的上一级目录为当前工作目录
-os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+#os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 class MyVanna(ChromaDB_VectorStore, QianWenAI_Chat):
     def __init__(self, config=None):
