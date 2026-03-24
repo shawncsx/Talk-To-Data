@@ -15,16 +15,59 @@ cache = MemoryCache()
 # from vanna.local import LocalContext_OpenAI
 # vn = LocalContext_OpenAI()
 
-from vanna.remote import VannaDefault
-vn = VannaDefault(model=os.environ['VANNA_MODEL'], api_key=os.environ['VANNA_API_KEY'])
+# from vanna.remote import VannaDefault
+# vn = VannaDefault(model=os.environ['VANNA_MODEL'], api_key=os.environ['VANNA_API_KEY'])
 
-vn.connect_to_snowflake(
-    account=os.environ['SNOWFLAKE_ACCOUNT'],
-    username=os.environ['SNOWFLAKE_USERNAME'],
-    password=os.environ['SNOWFLAKE_PASSWORD'],
-    database=os.environ['SNOWFLAKE_DATABASE'],
-    warehouse=os.environ['SNOWFLAKE_WAREHOUSE'],
-)
+# vn.connect_to_snowflake(
+#     account=os.environ['SNOWFLAKE_ACCOUNT'],
+#     username=os.environ['SNOWFLAKE_USERNAME'],
+#     password=os.environ['SNOWFLAKE_PASSWORD'],
+#     database=os.environ['SNOWFLAKE_DATABASE'],
+#     warehouse=os.environ['SNOWFLAKE_WAREHOUSE'],
+# )
+
+######################################################################################
+# from vanna.chromadb.chromadb_vector import ChromaDB_VectorStore
+# from vanna.ollama import Ollama
+
+# class MyVanna(ChromaDB_VectorStore, Ollama):
+#     def __init__(self, config=None):
+#         ChromaDB_VectorStore.__init__(self, config=config)
+#         Ollama.__init__(self, config=config)
+# config = {
+#     "path": r"C:\Tiigee\git_repositories\vanna\tests\chroma_db", #向量数据库存储路径
+#     "model": "qwen3-coder:480b-cloud",  # 本地 Ollama 模型名称
+#     "ollama_host": "http://192.168.3.189:11434",  # Ollama 服务地址
+#     "persist_directory": "./chroma_db",  # 向量数据库存储路径-----这个参数没有发挥作用
+#     "options": {"temperature": 0.3}  # 控制生成随机性
+# }
+
+# vn = MyVanna(config=config)
+
+# vn.connect_to_sqlite(r'C:\Tiigee\git_repositories\vanna\tests\database\Chinook.sqlite')
+######################################################################################
+from vanna.chromadb.chromadb_vector import ChromaDB_VectorStore
+from vanna.qianwen.QianwenAI_chat import QianWenAI_Chat
+
+#设置当前app.py文件所在目录的上一级目录为当前工作目录
+os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+class MyVanna(ChromaDB_VectorStore, QianWenAI_Chat):
+    def __init__(self, config=None):
+        ChromaDB_VectorStore.__init__(self, config=config)
+        QianWenAI_Chat.__init__(self, config=config)
+
+        
+config = {
+    "path": "./data/chroma_db", #向量数据库存储路径
+    "api_key": "sk-10ac90a6267a46ad83df797d65520494",
+    "model": "qwen-plus",  # 阿里云百炼平台模型
+    "options": {"temperature": 0.3}  # 控制生成随机性
+}
+
+vn = MyVanna(config=config)
+vn.connect_to_sqlite(r'./data/Chinook.sqlite')
+######################################################################################
 
 # NO NEED TO CHANGE ANYTHING BELOW THIS LINE
 def requires_cache(fields):
