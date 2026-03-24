@@ -1,3 +1,5 @@
+import sys
+
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -57,16 +59,22 @@ class MyVanna(ChromaDB_VectorStore, QianWenAI_Chat):
         ChromaDB_VectorStore.__init__(self, config=config)
         QianWenAI_Chat.__init__(self, config=config)
 
-        
+if sys.platform.startswith("linux"):
+    chromadb_path=r"/root/app_files/TalkToData/data/chroma_db"
+    sqlite_path=r"/root/app_files/TalkToData/data/Chinook.sqlite"
+else:
+    chromadb_path=r'C:\Tiigee\git_repositories\TalkToData\data\chroma_db' 
+    sqlite_path=r'C:\Tiigee\git_repositories\TalkToData\data\Chinook.sqlite'    
+
 config = {
-    "path": "./data/chroma_db", #向量数据库存储路径
+    "path": chromadb_path, #向量数据库存储路径
     "api_key": "sk-10ac90a6267a46ad83df797d65520494",
     "model": "qwen-plus",  # 阿里云百炼平台模型
     "options": {"temperature": 0.3}  # 控制生成随机性
 }
 
 vn = MyVanna(config=config)
-vn.connect_to_sqlite(r'./data/Chinook.sqlite')
+vn.connect_to_sqlite(sqlite_path)
 ######################################################################################
 
 # NO NEED TO CHANGE ANYTHING BELOW THIS LINE
@@ -253,4 +261,5 @@ def root():
     return app.send_static_file('index.html')
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    # app.run(debug=True)
+    app.run(debug=False)
