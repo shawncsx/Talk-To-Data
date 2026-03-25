@@ -9,7 +9,11 @@ import flask
 import os
 from cache import MemoryCache
 
+#控制子域名访问路径
+#from werkzeug.middleware.proxy_fix import ProxyFix
+
 app = Flask(__name__, static_url_path='')
+#app = Flask(__name__)
 
 # SETUP
 cache = MemoryCache()
