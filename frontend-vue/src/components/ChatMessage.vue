@@ -40,6 +40,57 @@
       </div>
     </div>
 
+    <!-- 反馈询问消息 -->
+    <div v-else-if="message.type === 'feedback'" class="flex justify-start items-start gap-3">
+      <!-- AI 头像 -->
+      <div class="w-10 h-10 flex items-center justify-center flex-shrink-0">
+        <img src="/images/dog.png" alt="AI" class="w-10 h-10 rounded-lg" />
+      </div>
+      <div class="max-w-[85%] w-full">
+        <div class="w-full bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+          <p class="text-sm text-gray-700 dark:text-gray-300 mb-3">这些回复内容是否正确？</p>
+          <div v-if="!message.answered" class="flex gap-3">
+            <button
+              @click="$emit('feedback', message.id, true)"
+              class="px-4 py-1.5 text-sm bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors"
+            >
+              是
+            </button>
+            <button
+              @click="$emit('feedback', message.id, false)"
+              class="px-4 py-1.5 text-sm bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+            >
+              否
+            </button>
+          </div>
+          <div v-else class="flex items-center gap-2">
+            <svg v-if="message.feedback === true" class="w-4 h-4 text-green-600 dark:text-green-400" fill="currentColor" viewBox="0 0 20 20">
+              <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+            </svg>
+            <svg v-else class="w-4 h-4 text-red-600 dark:text-red-400" fill="currentColor" viewBox="0 0 20 20">
+              <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path>
+            </svg>
+            <span class="text-sm text-gray-600 dark:text-gray-400">
+              {{ message.feedback === true ? '您认为回复的内容正确' : '您认为回复的内容不正确' }}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 反馈结果消息 -->
+    <div v-else-if="message.type === 'feedback_result'" class="flex justify-start items-start gap-3">
+      <!-- AI 头像 -->
+      <div class="w-10 h-10 flex items-center justify-center flex-shrink-0">
+        <img src="/images/dog.png" alt="AI" class="w-10 h-10 rounded-lg" />
+      </div>
+      <div class="max-w-[85%] w-full">
+        <div class="w-full bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+          <p class="text-sm text-gray-700 dark:text-gray-300">{{ message.content }}</p>
+        </div>
+      </div>
+    </div>
+
     <!-- 错误消息 -->
     <div v-else-if="message.type === 'error'" class="flex justify-start items-start gap-3">
       <!-- 错误头像 -->
@@ -71,7 +122,7 @@ const props = defineProps({
   }
 })
 
-defineEmits(['download'])
+defineEmits(['download', 'feedback'])
 
 const messageClass = computed(() => {
   return {

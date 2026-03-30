@@ -5,7 +5,7 @@
         <div class="flex-1 relative">
           <textarea
             v-model="inputText"
-            @keydown.enter.prevent="handleEnter"
+            @keydown.enter="handleEnter"
             @input="adjustHeight"
             ref="textareaRef"
             rows="1"
@@ -94,11 +94,12 @@ function adjustHeight() {
 }
 
 function handleEnter(event) {
-  if (event.shiftKey) {
-    // Shift + Enter 换行
-    return
+  if (!event.shiftKey) {
+    // 只按 Enter 键，阻止默认行为并发送消息
+    event.preventDefault()
+    sendMessage()
   }
-  sendMessage()
+  // Shift + Enter 换行，不阻止默认行为
 }
 
 function sendMessage() {

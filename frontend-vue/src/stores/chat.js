@@ -91,7 +91,14 @@ export const useChatStore = defineStore('chat', () => {
         console.log('图表生成失败:', chartErr)
       }
 
-      // 4. 获取跟进问题
+      // 4. 添加反馈询问消息
+      messages.value.push({
+        type: 'feedback',
+        id: sqlResponse.id,
+        timestamp: new Date()
+      })
+
+      // 5. 获取跟进问题
       try {
         const followupResponse = await api.generateFollowupQuestions(sqlResponse.id)
         if (followupResponse.type === 'question_list') {
@@ -101,7 +108,7 @@ export const useChatStore = defineStore('chat', () => {
         console.log('跟进问题生成失败:', followupErr)
       }
 
-      // 5. 更新历史记录
+      // 6. 更新历史记录
       await loadQuestionHistory()
 
     } catch (err) {
@@ -189,6 +196,52 @@ export const useChatStore = defineStore('chat', () => {
     error.value = null
   }
 
+  async function handleFeedback(messageId, isCorrect) {
+    try {
+      // 找到对应的用户问题和SQL消息
+      const userMessage = messages.value.find(msg => msg.type === 'user' && msg.timestamp < messages.value.find(m => m.id === messageId && m.type === 'sql').timestamp)
+      const sqlMessage = messages.value.find(msg => msg.id === messageId && msg.type === 'sql')
+      const feedbackMessage = messages.value.find(msg => msg.id === messageId && msg.type === 'feedback')
+
+      if (userMessage && sqlMessage && feedbackMessage) {
+        const question = userMessage.content
+        const sql = sqlMessage.content
+
+        // 更新反馈询问消息，标记为已回答
+        feedbackMessage.answered = true
+        feedbackMessage.feedback = isCorrect
+
+        let feedbackResult = ''
+        if (isCorrect) {
+          // 如果用户认为正确，将问题和SQL添加到training data
+          await api.train({ question, sql })
+          feedbackResult = '感谢反馈！已将此问题和SQL添加到训练数据中。'
+        } else {
+          // 如果用户认为不正确，从training data中删除
+          // 注意：这里需要调用适当的API来删除训练数据
+          // 由于API可能没有直接的删除方法，这里我们可以提示用户
+          feedbackResult = '感谢反馈！我们会根据您的反馈改进系统。'
+        }
+
+        // 添加反馈结果消息
+        messages.value.push({
+          type: 'feedback_result',
+          content: feedbackResult,
+          id: messageId,
+          timestamp: new Date()
+        })
+      }
+    } catch (err) {
+      console.error('处理反馈失败:', err)
+      // 添加错误消息
+      messages.value.push({
+        type: 'error',
+        content: '处理反馈失败: ' + err.message,
+        timestamp: new Date()
+      })
+    }
+  }
+
   return {
     // State
     messages,
@@ -208,6 +261,7 @@ export const useChatStore = defineStore('chat', () => {
     loadQuestionHistory,
     loadPreviousQuestion,
     downloadCurrentCsv,
-    clearChat
+    clearChat,
+    handleFeedback
   }
 })

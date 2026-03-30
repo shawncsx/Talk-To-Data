@@ -133,6 +133,7 @@
               :key="index"
               :message="message"
               @download="chatStore.downloadCurrentCsv"
+              @feedback="chatStore.handleFeedback"
             />
           </template>
 

@@ -34,7 +34,8 @@ config = {
     "path": chromadb_path, #向量数据库存储路径
     "api_key": "sk-10ac90a6267a46ad83df797d65520494",
     "model": "qwen-plus",  # 阿里云百炼平台模型
-    "options": {"temperature": 0.3}  # 控制生成随机性
+    "options": {"temperature": 0.3},  # 控制生成随机性
+    "initial_prompt": "Please answer me in Chinese."
 }
 
 vn = MyVanna(config=config)
