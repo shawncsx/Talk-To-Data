@@ -1,0 +1,141 @@
+import os
+import sys
+
+from vanna.anthropic.anthropic_chat import Anthropic_Chat
+from vanna.cohere.cohere_chat import Cohere_Chat
+from vanna.google import GoogleGeminiChat
+from vanna.mistral.mistral import Mistral
+# from vanna.openai.openai_chat import OpenAI_Chat
+from vanna.remote import VannaDefault
+from vanna.vannadb.vannadb_vector import VannaDB_VectorStore
+
+# try:
+#     print("Trying to load .env")
+#     from dotenv import load_dotenv
+#     load_dotenv()
+# except Exception as e:
+#     print(f"Failed to load .env {e}")
+#     pass
+
+# MY_VANNA_MODEL = 'chinook'
+# ANTHROPIC_Model = 'claude-3-sonnet-20240229'
+# MY_VANNA_API_KEY = os.environ['VANNA_API_KEY']
+# OPENAI_API_KEY = os.environ['OPENAI_API_KEY']
+# MISTRAL_API_KEY = os.environ['MISTRAL_API_KEY']
+# ANTHROPIC_API_KEY = os.environ['ANTHROPIC_API_KEY']
+# SNOWFLAKE_ACCOUNT = os.environ['SNOWFLAKE_ACCOUNT']
+# SNOWFLAKE_USERNAME = os.environ['SNOWFLAKE_USERNAME']
+# SNOWFLAKE_PASSWORD = os.environ['SNOWFLAKE_PASSWORD']
+# AZURE_SEARCH_API_KEY = os.environ['AZURE_SEARCH_API_KEY']
+
+if sys.platform.startswith("linux"):
+    chromadb_path=r"/root/app_files/TalkToData/data/chroma_db"
+    sqlite_path=r"/root/app_files/TalkToData/data/Chinook.sqlite"
+else:
+    chromadb_path=r'C:\Tiigee\git_repositories\TalkToData\data\chroma_db' 
+    sqlite_path=r'C:\Tiigee\git_repositories\TalkToData\data\Chinook.sqlite' 
+
+# current_working_dir = os.getcwd()
+# print("当前工作目录： ", current_working_dir)
+
+# script_dir1 = os.path.dirname(os.path.abspath(__file__))
+# print("当前py文件所在目录1： ", script_dir1)
+
+# script_dir2 = os.path.dirname(os.path.realpath(__file__))
+# print("当前py文件所在目录2： ", script_dir2)
+
+# exit()
+
+from vanna.chromadb.chromadb_vector import ChromaDB_VectorStore
+# from vanna.openai.openai_chat import OpenAI_Chat
+# from openai import OpenAI
+
+# api_key = "sk-10ac90a6267a46ad83df797d65520494"
+# client = OpenAI(
+#     api_key=api_key,
+#     base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+# )
+# completion = client.chat.completions.create(
+#     model="qwen-plus",
+#     messages=[{'role': 'user', 'content': '你是谁？'}]
+# )
+# print(completion.choices[0].message.content)
+
+from vanna.qianwen.QianwenAI_chat import QianWenAI_Chat
+
+class MyVanna(ChromaDB_VectorStore, QianWenAI_Chat):
+    def __init__(self, config=None):
+        ChromaDB_VectorStore.__init__(self, config=config)
+        QianWenAI_Chat.__init__(self, config=config)
+
+config = {
+    "path": chromadb_path, #向量数据库存储路径
+    "api_key": "sk-10ac90a6267a46ad83df797d65520494",
+    "model": "qwen-plus",  # 阿里云百炼平台模型
+    "options": {"temperature": 0.3}  # 控制生成随机性
+}
+
+vn = MyVanna(config=config)
+
+vn.connect_to_sqlite(sqlite_path)
+
+def test_vn_chroma():
+    existing_training_data = vn.get_training_data()
+    if len(existing_training_data) > 0:
+        for _, training_data in existing_training_data.iterrows():
+            vn.remove_training_data(training_data['id'])
+
+    df_ddl = vn.run_sql("SELECT type, sql FROM sqlite_master WHERE sql is not null")
+
+    for ddl in df_ddl['sql'].to_list():
+        vn.train(ddl=ddl)
+
+    # sql = vn.generate_sql("What are the top 7 customers by sales?")
+    # sql = vn.generate_sql("What are the top 10 customers by sales?", {"model": "qwen-plus"})
+    sql = vn.generate_sql("哪些客户的销售额排在前10位?", {"model": "qwen-plus"})
+
+    print("*******************************begin\n")
+    print(sql)
+    print("*******************************end\n")
+
+    df = vn.run_sql(sql)
+    assert len(df) == 10
+    
+
+if __name__ == "__main__":
+    test_vn_chroma()
+
+
+# class VannaNumResults(ChromaDB_VectorStore, OpenAI_Chat):
+#     def __init__(self, config=None):
+#         ChromaDB_VectorStore.__init__(self, config=config)
+#         OpenAI_Chat.__init__(self, config=config)
+
+# vn_chroma_n_results = MyVanna(config={'model': 'gpt-3.5-turbo', 'n_results': 1})
+# vn_chroma_n_results_ddl = MyVanna(config={'model': 'gpt-3.5-turbo', 'n_results_ddl': 2})
+# vn_chroma_n_results_sql = MyVanna(config={'model': 'gpt-3.5-turbo', 'n_results_sql': 3})
+# vn_chroma_n_results_documentation = MyVanna(config={'model': 'gpt-3.5-turbo', 'n_results_documentation': 4})
+
+# def test_n_results():
+#     for i in range(1, 10):
+#         vn.train(question=f"What are the total sales for customer {i}?", sql=f"SELECT SUM(sales) FROM example_sales WHERE customer_id = {i}")
+
+#     for i in range(1, 10):
+#         vn.train(documentation=f"Sample documentation {i}")
+
+#     question = "Whare are the top 5 customers by sales?"
+#     assert len(vn_chroma_n_results.get_related_ddl(question)) == 1
+#     assert len(vn_chroma_n_results.get_related_documentation(question)) == 1
+#     assert len(vn_chroma_n_results.get_similar_question_sql(question)) == 1
+
+#     assert len(vn_chroma_n_results_ddl.get_related_ddl(question)) == 2
+#     assert len(vn_chroma_n_results_ddl.get_related_documentation(question)) != 2
+#     assert len(vn_chroma_n_results_ddl.get_similar_question_sql(question)) != 2
+
+#     assert len(vn_chroma_n_results_sql.get_related_ddl(question)) != 3
+#     assert len(vn_chroma_n_results_sql.get_related_documentation(question)) != 3
+#     assert len(vn_chroma_n_results_sql.get_similar_question_sql(question)) == 3
+
+#     assert len(vn_chroma_n_results_documentation.get_related_ddl(question)) != 4
+#     assert len(vn_chroma_n_results_documentation.get_related_documentation(question)) == 4
+#     assert len(vn_chroma_n_results_documentation.get_similar_question_sql(question)) != 4
