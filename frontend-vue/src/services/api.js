@@ -83,6 +83,32 @@ export const api = {
   async getQuestionHistory() {
     const response = await apiClient.get('/get_question_history')
     return response.data
+  },
+
+  // 数据源管理
+  async getDataSources() {
+    const response = await apiClient.get('/data_sources')
+    return response.data
+  },
+
+  async addDataSource(data) {
+    const response = await apiClient.post('/data_sources', data)
+    return response.data
+  },
+
+  async updateDataSource(id, data) {
+    const response = await apiClient.put(`/data_sources/${id}`, data)
+    return response.data
+  },
+
+  async deleteDataSource(id) {
+    const response = await apiClient.delete(`/data_sources/${id}`)
+    return response.data
+  },
+
+  async testDataSource(data) {
+    const response = await apiClient.post('/data_sources/test', data)
+    return response.data
   }
 }
 

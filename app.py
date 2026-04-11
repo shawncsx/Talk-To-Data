@@ -8,9 +8,12 @@ from flask import Flask, jsonify, Response, request, redirect, url_for
 import flask
 import os
 from cache import MemoryCache
+import mysql.connector
+import sqlite3
+import json
 
-#app = Flask(__name__, static_url_path='')
-app = Flask(__name__, static_url_path='', static_folder='static-vue')
+app = Flask(__name__, static_url_path='')
+# app = Flask(__name__, static_url_path='', static_folder='static-vue')
 
 # SETUP
 cache = MemoryCache()
@@ -27,8 +30,8 @@ if sys.platform.startswith("linux"):
     chromadb_path=r"/root/app_files/TalkToData/data/chroma_db"
     sqlite_path=r"/root/app_files/TalkToData/data/Chinook.sqlite"
 else:
-    chromadb_path=r'C:\Tiigee\git_repositories\TalkToData\data\chroma_db' 
-    sqlite_path=r'C:\Tiigee\git_repositories\TalkToData\data\Chinook.sqlite'    
+    chromadb_path=r'D:\shawn\Computer\git\Talk-To-Data\data\chroma_db' 
+    sqlite_path=r'D:\shawn\Computer\git\Talk-To-Data\data\Chinook.sqlite'    
 
 config = {
     "path": chromadb_path, #向量数据库存储路径
@@ -40,6 +43,282 @@ config = {
 
 vn = MyVanna(config=config)
 vn.connect_to_sqlite(sqlite_path)
+
+# 数据源管理 - 使用ECS MySQL数据库
+mysql_config = {
+    "host": "47.120.40.157",
+    "port": 3306,
+    "user": "root",
+    "password": "Shawn#6ge1",
+    "database": "talktodata"
+}
+
+# 初始化MySQL连接
+def init_mysql_connection():
+    try:
+        conn = mysql.connector.connect(**mysql_config)
+        cursor = conn.cursor()
+        
+        # 创建data_sources表（如果不存在）
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS data_sources (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(255) NOT NULL,
+            type ENUM('mysql', 'sqlite') NOT NULL,
+            connection_string TEXT NOT NULL,
+            mysql_host VARCHAR(255),
+            mysql_port INT DEFAULT 3306,
+            mysql_database VARCHAR(255),
+            mysql_username VARCHAR(255),
+            mysql_password VARCHAR(255),
+            sqlite_path TEXT,
+            description TEXT,
+            status VARCHAR(20) DEFAULT 'active',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        )
+        ''')
+        
+        # 检查是否有默认数据源
+        cursor.execute("SELECT COUNT(*) FROM data_sources WHERE id = 1")
+        count = cursor.fetchone()[0]
+        
+        if count == 0:
+            # 插入默认SQLite数据源
+            default_source = {
+                "name": "默认SQLite数据库",
+                "type": "sqlite",
+                "connection_string": f"sqlite:///{sqlite_path}",
+                "sqlite_path": sqlite_path,
+                "description": "默认的Chinook示例数据库",
+                "status": "active"
+            }
+            
+            cursor.execute('''
+            INSERT INTO data_sources (name, type, connection_string, sqlite_path, description, status)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ''', (
+                default_source['name'],
+                default_source['type'],
+                default_source['connection_string'],
+                default_source['sqlite_path'],
+                default_source['description'],
+                default_source['status']
+            ))
+            conn.commit()
+        
+        cursor.close()
+        conn.close()
+        print("MySQL database initialized successfully")
+    except Exception as e:
+        print(f"Error initializing MySQL database: {e}")
+
+# 初始化MySQL数据库
+init_mysql_connection()
+
+# 数据源管理API
+@app.route('/api/v0/data_sources', methods=['GET'])
+def get_data_sources():
+    try:
+        conn = mysql.connector.connect(**mysql_config)
+        cursor = conn.cursor(dictionary=True)
+        
+        cursor.execute("SELECT * FROM data_sources")
+        sources = cursor.fetchall()
+        
+        cursor.close()
+        conn.close()
+        
+        return jsonify({"type": "data_sources", "data": sources})
+    except Exception as e:
+        return jsonify({"type": "error", "error": str(e)})
+
+@app.route('/api/v0/data_sources', methods=['POST'])
+def add_data_source():
+    data = request.json
+    
+    # 验证必填字段
+    required_fields = ['name', 'type']
+    for field in required_fields:
+        if field not in data:
+            return jsonify({"type": "error", "error": f"Missing required field: {field}"})
+    
+    # 构建连接字符串
+    if data['type'] == 'mysql':
+        connection_string = f"mysql://{data.get('mysql_username', '')}:{data.get('mysql_password', '')}@{data.get('mysql_host', '')}:{data.get('mysql_port', 3306)}/{data.get('mysql_database', '')}"
+    elif data['type'] == 'sqlite':
+        connection_string = f"sqlite:///{data.get('sqlite_path', '')}"
+    
+    try:
+        conn = mysql.connector.connect(**mysql_config)
+        cursor = conn.cursor(dictionary=True)
+        
+        # 插入新数据源
+        cursor.execute('''
+        INSERT INTO data_sources (name, type, connection_string, mysql_host, mysql_port, mysql_database, mysql_username, mysql_password, sqlite_path, description, status)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ''', (
+            data['name'],
+            data['type'],
+            connection_string,
+            data.get('mysql_host', None),
+            data.get('mysql_port', 3306),
+            data.get('mysql_database', None),
+            data.get('mysql_username', None),
+            data.get('mysql_password', None),
+            data.get('sqlite_path', None),
+            data.get('description', ''),
+            data.get('status', 'active')
+        ))
+        
+        conn.commit()
+        new_id = cursor.lastrowid
+        
+        # 获取新插入的数据源
+        cursor.execute("SELECT * FROM data_sources WHERE id = %s", (new_id,))
+        new_source = cursor.fetchone()
+        
+        cursor.close()
+        conn.close()
+        
+        return jsonify({"type": "success", "data": new_source})
+    except Exception as e:
+        return jsonify({"type": "error", "error": str(e)})
+
+@app.route('/api/v0/data_sources/<int:id>', methods=['PUT'])
+def update_data_source(id):
+    data = request.json
+    
+    # 构建连接字符串
+    if data.get('type') == 'mysql':
+        connection_string = f"mysql://{data.get('mysql_username', '')}:{data.get('mysql_password', '')}@{data.get('mysql_host', '')}:{data.get('mysql_port', 3306)}/{data.get('mysql_database', '')}"
+    elif data.get('type') == 'sqlite':
+        connection_string = f"sqlite:///{data.get('sqlite_path', '')}"
+    else:
+        # 如果类型没有变化，保持原有连接字符串
+        connection_string = None
+    
+    try:
+        conn = mysql.connector.connect(**mysql_config)
+        cursor = conn.cursor(dictionary=True)
+        
+        # 检查数据源是否存在
+        cursor.execute("SELECT * FROM data_sources WHERE id = %s", (id,))
+        existing_source = cursor.fetchone()
+        
+        if not existing_source:
+            cursor.close()
+            conn.close()
+            return jsonify({"type": "error", "error": "Data source not found"})
+        
+        # 更新数据源
+        update_fields = []
+        update_values = []
+        
+        if 'name' in data:
+            update_fields.append("name = %s")
+            update_values.append(data['name'])
+        if 'type' in data:
+            update_fields.append("type = %s")
+            update_values.append(data['type'])
+        if connection_string:
+            update_fields.append("connection_string = %s")
+            update_values.append(connection_string)
+        if 'mysql_host' in data:
+            update_fields.append("mysql_host = %s")
+            update_values.append(data['mysql_host'])
+        if 'mysql_port' in data:
+            update_fields.append("mysql_port = %s")
+            update_values.append(data['mysql_port'])
+        if 'mysql_database' in data:
+            update_fields.append("mysql_database = %s")
+            update_values.append(data['mysql_database'])
+        if 'mysql_username' in data:
+            update_fields.append("mysql_username = %s")
+            update_values.append(data['mysql_username'])
+        if 'mysql_password' in data:
+            update_fields.append("mysql_password = %s")
+            update_values.append(data['mysql_password'])
+        if 'sqlite_path' in data:
+            update_fields.append("sqlite_path = %s")
+            update_values.append(data['sqlite_path'])
+        if 'description' in data:
+            update_fields.append("description = %s")
+            update_values.append(data['description'])
+        if 'status' in data:
+            update_fields.append("status = %s")
+            update_values.append(data['status'])
+        
+        if update_fields:
+            update_query = f"UPDATE data_sources SET {', '.join(update_fields)} WHERE id = %s"
+            update_values.append(id)
+            
+            cursor.execute(update_query, update_values)
+            conn.commit()
+        
+        # 获取更新后的数据源
+        cursor.execute("SELECT * FROM data_sources WHERE id = %s", (id,))
+        updated_source = cursor.fetchone()
+        
+        cursor.close()
+        conn.close()
+        
+        return jsonify({"type": "success", "data": updated_source})
+    except Exception as e:
+        return jsonify({"type": "error", "error": str(e)})
+
+@app.route('/api/v0/data_sources/<int:id>', methods=['DELETE'])
+def delete_data_source(id):
+    # 不能删除默认数据源
+    if id == 1:
+        return jsonify({"type": "error", "error": "Cannot delete default data source"})
+    
+    try:
+        conn = mysql.connector.connect(**mysql_config)
+        cursor = conn.cursor()
+        
+        # 检查数据源是否存在
+        cursor.execute("SELECT * FROM data_sources WHERE id = %s", (id,))
+        if not cursor.fetchone():
+            cursor.close()
+            conn.close()
+            return jsonify({"type": "error", "error": "Data source not found"})
+        
+        # 删除数据源
+        cursor.execute("DELETE FROM data_sources WHERE id = %s", (id,))
+        conn.commit()
+        
+        cursor.close()
+        conn.close()
+        
+        return jsonify({"type": "success", "message": "Data source deleted successfully"})
+    except Exception as e:
+        return jsonify({"type": "error", "error": str(e)})
+
+@app.route('/api/v0/data_sources/test', methods=['POST'])
+def test_data_source():
+    data = request.json
+    
+    try:
+        if data['type'] == 'mysql':
+            # 测试MySQL连接
+            conn = mysql.connector.connect(
+                host=data['mysql_host'],
+                port=data['mysql_port'],
+                user=data['mysql_username'],
+                password=data['mysql_password'],
+                database=data['mysql_database']
+            )
+            conn.close()
+        elif data['type'] == 'sqlite':
+            # 测试SQLite连接
+            conn = sqlite3.connect(data['sqlite_path'])
+            conn.close()
+        
+        return jsonify({"type": "success", "message": "Connection successful"})
+    except Exception as e:
+        return jsonify({"type": "error", "error": str(e)})
+
 ######################################################################################
 
 # NO NEED TO CHANGE ANYTHING BELOW THIS LINE
