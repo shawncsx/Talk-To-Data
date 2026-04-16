@@ -1,5 +1,19 @@
 <template>
   <div class="space-y-6">
+    <!-- 默认数据源提示 -->
+    <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg px-4 py-3">
+      <div class="flex items-start">
+        <svg class="w-5 h-5 text-blue-400 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+        </svg>
+        <div class="ml-3">
+          <p class="text-sm text-blue-800 dark:text-blue-200">
+            默认数据源是系统优先使用的数据源，在对话界面中会优先选择默认数据源进行查询。
+          </p>
+        </div>
+      </div>
+    </div>
+    
     <!-- 数据源列表 -->
     <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
       <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
@@ -38,7 +52,14 @@
           <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
             <tr v-for="source in dataSources" :key="source.id">
               <td class="px-6 py-4 whitespace-nowrap max-w-xs">
-                <div class="text-sm font-medium text-gray-900 dark:text-white truncate" :title="source.name">{{ source.name }}</div>
+                <div class="flex items-center gap-2">
+                  <div class="text-sm font-medium text-gray-900 dark:text-white truncate" :title="source.name">
+                    {{ source.name }}
+                    <span v-if="source.is_default" class="ml-2 px-2 py-0.5 text-xs bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200 rounded">
+                      默认
+                    </span>
+                  </div>
+                </div>
                 <div v-if="source.description" class="text-sm text-gray-500 dark:text-gray-400 truncate" :title="source.description">{{ source.description }}</div>
               </td>
               <td class="px-6 py-4 whitespace-nowrap">
@@ -71,7 +92,8 @@
                 <button 
                   @click="deleteDataSource(source)"
                   class="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300"
-                  :disabled="source.id === 1"
+                  :disabled="source.is_default"
+                  :title="source.is_default ? '不能删除默认数据源' : ''"
                 >
                   删除
                 </button>
@@ -232,6 +254,20 @@
               </select>
             </div>
 
+            <div>
+              <label class="flex items-center space-x-2">
+                <input 
+                  v-model="formData.is_default" 
+                  type="checkbox" 
+                  class="w-4 h-4 text-primary-600 bg-gray-100 border-gray-300 rounded focus:ring-primary-500 dark:focus:ring-primary-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+                >
+                <span class="text-sm font-medium text-gray-700 dark:text-gray-300">设为默认数据源</span>
+              </label>
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                默认数据源只能有一个，设置后其他数据源将自动取消默认状态
+              </p>
+            </div>
+
             <div class="pt-4">
               <button 
                 @click="testConnection"
@@ -282,15 +318,15 @@
 
     <!-- 通知消息 -->
     <div v-if="notification" class="fixed bottom-4 right-4 z-50 max-w-md" :class="notification.type === 'success' ? 'bg-green-500' : 'bg-red-500'">
-      <div class="p-4 rounded-lg shadow-lg text-white">
-        <div class="flex items-center gap-2">
-          <svg v-if="notification.type === 'success'" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <div class="p-4 rounded-lg shadow-lg text-white max-h-48 overflow-y-auto">
+        <div class="flex gap-2">
+          <svg v-if="notification.type === 'success'" class="w-5 h-5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
           </svg>
-          <svg v-else class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg v-else class="w-5 h-5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-.77-2.694-.77-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
           </svg>
-          <span>{{ notification.message }}</span>
+          <span class="flex-1 whitespace-pre-wrap break-words">{{ notification.message }}</span>
         </div>
       </div>
     </div>
@@ -329,7 +365,8 @@ const openAddModal = () => {
     name: '',
     type: 'mysql',
     mysql_port: 3306,
-    status: 'active'
+    status: 'active',
+    is_default: false
   }
   showAddModal.value = true
   showEditModal.value = false
@@ -337,7 +374,10 @@ const openAddModal = () => {
 
 // 打开编辑模态框
 const editDataSource = (source) => {
-  formData.value = { ...source }
+  formData.value = { 
+    ...source,
+    is_default: source.is_default === 1 || source.is_default === true
+  }
   showEditModal.value = true
   showAddModal.value = false
 }
@@ -375,11 +415,22 @@ const saveDataSource = async () => {
 // 测试连接
 const testConnection = async () => {
   try {
+    // 构建连接参数信息
+    let connectionInfo = ''
+    if (formData.value.type === 'mysql') {
+      connectionInfo = `主机: ${formData.value.mysql_host}\n端口: ${formData.value.mysql_port}\n数据库: ${formData.value.mysql_database}\n用户名: ${formData.value.mysql_username}\n密码: ${formData.value.mysql_password}`
+    } else if (formData.value.type === 'sqlite') {
+      connectionInfo = `文件路径: ${formData.value.sqlite_path}`
+    }
+    
+    // 显示连接参数
+    console.log('测试连接参数:', connectionInfo)
+    
     const response = await api.testDataSource(formData.value)
     if (response.type === 'success') {
-      showNotification('success', '连接测试成功')
+      showNotification('success', `连接测试成功\n${connectionInfo}`)
     } else {
-      showNotification('error', response.error || '连接测试失败')
+      showNotification('error', `${response.error || '连接测试失败'}\n${connectionInfo}`)
     }
   } catch (error) {
     showNotification('error', '连接测试失败')

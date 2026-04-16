@@ -1,4 +1,5 @@
 import sys
+import configparser
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -11,6 +12,13 @@ from cache import MemoryCache
 import mysql.connector
 import sqlite3
 import json
+
+# 读取配置文件
+config_parser = configparser.ConfigParser()
+config_parser.read('talktodata.conf', encoding='utf-8')
+
+# 向量数据库配置
+vector_db_base_path = config_parser.get('VectorDB_dev', 'base_path') if sys.platform.startswith('win32') else config_parser.get('VectorDB', 'base_path')
 
 app = Flask(__name__, static_url_path='')
 # app = Flask(__name__, static_url_path='', static_folder='static-vue')
@@ -29,29 +37,41 @@ class MyVanna(ChromaDB_VectorStore, QianWenAI_Chat):
 if sys.platform.startswith("linux"):
     chromadb_path=r"/root/app_files/TalkToData/data/chroma_db"
     sqlite_path=r"/root/app_files/TalkToData/data/Chinook.sqlite"
+    mysql_config = {
+        "host": config_parser.get('mysql', 'host'),
+        "port": config_parser.getint('mysql', 'port'),
+        "user": config_parser.get('mysql', 'user'),
+        "password": config_parser.get('mysql', 'password'),
+        "database": config_parser.get('mysql', 'database')
+    } 
+    config = {
+        "path": chromadb_path, #向量数据库存储路径
+        "api_key": config_parser.get('LLM_server', 'api_key'),
+        "model": config_parser.get('LLM_server', 'model'),  # 阿里云百炼平台模型
+        "options": config_parser.get('LLM_server', 'options'),  # 控制生成随机性
+        "initial_prompt": "Please answer me in Chinese."
+    }
 else:
     chromadb_path=r'D:\shawn\Computer\git\Talk-To-Data\data\chroma_db' 
-    sqlite_path=r'D:\shawn\Computer\git\Talk-To-Data\data\Chinook.sqlite'    
-
-config = {
-    "path": chromadb_path, #向量数据库存储路径
-    "api_key": "sk-10ac90a6267a46ad83df797d65520494",
-    "model": "qwen-plus",  # 阿里云百炼平台模型
-    "options": {"temperature": 0.3},  # 控制生成随机性
-    "initial_prompt": "Please answer me in Chinese."
-}
+    sqlite_path=r'D:\shawn\Computer\git\Talk-To-Data\data\Chinook.sqlite'
+    # 数据源管理 - 使用ECS MySQL数据库
+    mysql_config = {
+        "host": config_parser.get('mysql_dev', 'host'),
+        "port": config_parser.getint('mysql_dev', 'port'),
+        "user": config_parser.get('mysql_dev', 'user'),
+        "password": config_parser.get('mysql_dev', 'password'),
+        "database": config_parser.get('mysql_dev', 'database')
+    }
+    config = {
+        "path": chromadb_path, #向量数据库存储路径
+        "api_key": config_parser.get('LLM_server_dev', 'api_key'),
+        "model": config_parser.get('LLM_server_dev', 'model'),  # 阿里云百炼平台模型
+        "options": config_parser.get('LLM_server_dev', 'options'),  # 控制生成随机性
+        "initial_prompt": "Please answer me in Chinese."
+    } 
 
 vn = MyVanna(config=config)
 vn.connect_to_sqlite(sqlite_path)
-
-# 数据源管理 - 使用ECS MySQL数据库
-mysql_config = {
-    "host": "47.120.40.157",
-    "port": 3306,
-    "user": "root",
-    "password": "Shawn#6ge1",
-    "database": "talktodata"
-}
 
 # 初始化MySQL连接
 def init_mysql_connection():
@@ -72,8 +92,10 @@ def init_mysql_connection():
             mysql_username VARCHAR(255),
             mysql_password VARCHAR(255),
             sqlite_path TEXT,
+            vector_db_path VARCHAR(255),
             description TEXT,
             status VARCHAR(20) DEFAULT 'active',
+            is_default BOOLEAN DEFAULT FALSE,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
         )
@@ -90,18 +112,20 @@ def init_mysql_connection():
                 "type": "sqlite",
                 "connection_string": f"sqlite:///{sqlite_path}",
                 "sqlite_path": sqlite_path,
+                "vector_db_path": chromadb_path,
                 "description": "默认的Chinook示例数据库",
                 "status": "active"
             }
             
             cursor.execute('''
-            INSERT INTO data_sources (name, type, connection_string, sqlite_path, description, status)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            INSERT INTO data_sources (name, type, connection_string, sqlite_path, vector_db_path, description, status)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             ''', (
                 default_source['name'],
                 default_source['type'],
                 default_source['connection_string'],
                 default_source['sqlite_path'],
+                default_source['vector_db_path'],
                 default_source['description'],
                 default_source['status']
             ))
@@ -126,6 +150,19 @@ def get_data_sources():
         cursor.execute("SELECT * FROM data_sources")
         sources = cursor.fetchall()
         
+        # 检查是否有默认数据源
+        has_default = any(source.get('is_default') for source in sources)
+        
+        # 如果没有默认数据源，将第一个数据源设为默认
+        if not has_default and sources:
+            first_id = sources[0]['id']
+            cursor.execute("UPDATE data_sources SET is_default = TRUE WHERE id = %s", (first_id,))
+            conn.commit()
+            
+            # 重新获取更新后的数据源列表
+            cursor.execute("SELECT * FROM data_sources")
+            sources = cursor.fetchall()
+        
         cursor.close()
         conn.close()
         
@@ -147,16 +184,53 @@ def add_data_source():
     if data['type'] == 'mysql':
         connection_string = f"mysql://{data.get('mysql_username', '')}:{data.get('mysql_password', '')}@{data.get('mysql_host', '')}:{data.get('mysql_port', 3306)}/{data.get('mysql_database', '')}"
     elif data['type'] == 'sqlite':
-        connection_string = f"sqlite:///{data.get('sqlite_path', '')}"
+        import os
+        sqlite_path = data.get('sqlite_path', '')
+        if not os.path.exists(sqlite_path):
+            return jsonify({"type": "error", "error": f"SQLite database file does not exist: {sqlite_path}"})
+        connection_string = f"sqlite:///{sqlite_path}"
+    
+    # 自动创建向量数据库目录
+    import os
+    import shutil
+    import hashlib
+    
+    # 生成唯一的目录名称（基于数据源名称和当前时间）
+    import time
+    unique_id = hashlib.md5(f"{data['name']}_{time.time()}".encode()).hexdigest()[:8]
+    vector_db_dir = os.path.join(vector_db_base_path, f"vectordb_{unique_id}")
+    
+    # 确保基础目录存在
+    if not os.path.exists(vector_db_base_path):
+        os.makedirs(vector_db_base_path)
+    
+    # 创建向量数据库子目录
+    if os.path.exists(vector_db_dir):
+        shutil.rmtree(vector_db_dir)
+    os.makedirs(vector_db_dir)
+
+    # 初始化空的 chromadb 数据库
+    # from vanna.chromadb.chromadb_vector import ChromaDB_VectorStore
+    # temp_config = {"path": vector_db_dir}
+    # temp_chroma = ChromaDB_VectorStore(config=temp_config)
+    # temp_chroma.connect()
+    
+    # 设置 vector_db_path
+    data['vector_db_path'] = vector_db_dir
     
     try:
         conn = mysql.connector.connect(**mysql_config)
         cursor = conn.cursor(dictionary=True)
         
+        # 如果设置为默认数据源，先将其他所有数据源设置为非默认
+        is_default = data.get('is_default', False)
+        if is_default:
+            cursor.execute("UPDATE data_sources SET is_default = FALSE")
+        
         # 插入新数据源
         cursor.execute('''
-        INSERT INTO data_sources (name, type, connection_string, mysql_host, mysql_port, mysql_database, mysql_username, mysql_password, sqlite_path, description, status)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        INSERT INTO data_sources (name, type, connection_string, mysql_host, mysql_port, mysql_database, mysql_username, mysql_password, sqlite_path, vector_db_path, description, status, is_default)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ''', (
             data['name'],
             data['type'],
@@ -167,8 +241,10 @@ def add_data_source():
             data.get('mysql_username', None),
             data.get('mysql_password', None),
             data.get('sqlite_path', None),
+            data.get('vector_db_path', None),
             data.get('description', ''),
-            data.get('status', 'active')
+            data.get('status', 'active'),
+            1 if is_default else 0
         ))
         
         conn.commit()
@@ -193,7 +269,11 @@ def update_data_source(id):
     if data.get('type') == 'mysql':
         connection_string = f"mysql://{data.get('mysql_username', '')}:{data.get('mysql_password', '')}@{data.get('mysql_host', '')}:{data.get('mysql_port', 3306)}/{data.get('mysql_database', '')}"
     elif data.get('type') == 'sqlite':
-        connection_string = f"sqlite:///{data.get('sqlite_path', '')}"
+        import os
+        sqlite_path = data.get('sqlite_path', '')
+        if not os.path.exists(sqlite_path):
+            return jsonify({"type": "error", "error": f"SQLite database file does not exist: {sqlite_path}"})
+        connection_string = f"sqlite:///{sqlite_path}"
     else:
         # 如果类型没有变化，保持原有连接字符串
         connection_string = None
@@ -242,12 +322,21 @@ def update_data_source(id):
         if 'sqlite_path' in data:
             update_fields.append("sqlite_path = %s")
             update_values.append(data['sqlite_path'])
+        if 'vector_db_path' in data:
+            update_fields.append("vector_db_path = %s")
+            update_values.append(data['vector_db_path'])
         if 'description' in data:
             update_fields.append("description = %s")
             update_values.append(data['description'])
         if 'status' in data:
             update_fields.append("status = %s")
             update_values.append(data['status'])
+        if 'is_default' in data:
+            # 如果设置为默认数据源，先将其他所有数据源设置为非默认
+            if data['is_default']:
+                cursor.execute("UPDATE data_sources SET is_default = FALSE WHERE id != %s", (id,))
+            update_fields.append("is_default = %s")
+            update_values.append(1 if data['is_default'] else 0)
         
         if update_fields:
             update_query = f"UPDATE data_sources SET {', '.join(update_fields)} WHERE id = %s"
@@ -269,20 +358,24 @@ def update_data_source(id):
 
 @app.route('/api/v0/data_sources/<int:id>', methods=['DELETE'])
 def delete_data_source(id):
-    # 不能删除默认数据源
-    if id == 1:
-        return jsonify({"type": "error", "error": "Cannot delete default data source"})
-    
     try:
         conn = mysql.connector.connect(**mysql_config)
-        cursor = conn.cursor()
+        cursor = conn.cursor(dictionary=True)
         
         # 检查数据源是否存在
         cursor.execute("SELECT * FROM data_sources WHERE id = %s", (id,))
-        if not cursor.fetchone():
+        source = cursor.fetchone()
+        
+        if not source:
             cursor.close()
             conn.close()
             return jsonify({"type": "error", "error": "Data source not found"})
+        
+        # 不能删除默认数据源
+        if source.get('is_default'):
+            cursor.close()
+            conn.close()
+            return jsonify({"type": "error", "error": "Cannot delete default data source"})
         
         # 删除数据源
         cursor.execute("DELETE FROM data_sources WHERE id = %s", (id,))
@@ -312,10 +405,278 @@ def test_data_source():
             conn.close()
         elif data['type'] == 'sqlite':
             # 测试SQLite连接
+            import os
+            if not os.path.exists(data['sqlite_path']):
+                raise Exception(f"SQLite database file does not exist: {data['sqlite_path']}")
             conn = sqlite3.connect(data['sqlite_path'])
             conn.close()
         
         return jsonify({"type": "success", "message": "Connection successful"})
+    except Exception as e:
+        return jsonify({"type": "error", "error": str(e)})
+
+@app.route('/api/v0/data_sources/<int:data_source_id>/tables', methods=['GET'])
+def get_data_source_tables(data_source_id):
+    """获取数据源的库表列表"""
+    try:
+        conn = mysql.connector.connect(**mysql_config)
+        cursor = conn.cursor(dictionary=True)
+        
+        # 从 metadata_tables 表中获取指定数据源的库表
+        cursor.execute("SELECT * FROM metadata_tables WHERE data_source_id = %s", (data_source_id,))
+        tables = cursor.fetchall()
+        
+        cursor.close()
+        conn.close()
+        
+        return jsonify({"type": "tables", "data": tables})
+    except Exception as e:
+        return jsonify({"type": "error", "error": str(e)})
+
+@app.route('/api/v0/data_sources/tables/<int:table_id>/structure', methods=['GET'])
+def get_table_structure(table_id):
+    """获取库表的结构信息"""
+    try:
+        conn = mysql.connector.connect(**mysql_config)
+        cursor = conn.cursor(dictionary=True)
+        
+        # 获取表的基本信息
+        cursor.execute("SELECT * FROM metadata_tables WHERE id = %s", (table_id,))
+        table_info = cursor.fetchone()
+        
+        if not table_info:
+            cursor.close()
+            conn.close()
+            return jsonify({"type": "error", "error": "表不存在"})
+        
+        # 获取列信息
+        cursor.execute("""
+            SELECT 
+                column_name,
+                data_type,
+                column_description,
+                is_primary_key,
+                is_nullable,
+                created_at,
+                updated_at
+            FROM metadata_columns
+            WHERE table_id = %s
+            ORDER BY id
+        """, (table_id,))
+        columns = cursor.fetchall()
+        
+        cursor.close()
+        conn.close()
+        
+        # 格式化列信息
+        formatted_columns = []
+        for col in columns:
+            formatted_columns.append({
+                'name': col['column_name'],
+                'type': col['data_type'],
+                'description': col['column_description'] or '-',
+                'key': 'PRI' if col['is_primary_key'] else '',
+                'nullable': bool(col['is_nullable']),
+                'default': None,  # 如果需要可以添加默认值字段
+                'extra': ''
+            })
+        
+        # 生成索引信息（从主键列生成）
+        primary_keys = [col['column_name'] for col in columns if col['is_primary_key']]
+        indexes = []
+        if primary_keys:
+            indexes.append({
+                'name': 'PRIMARY',
+                'columns': primary_keys,
+                'type': 'BTREE'
+            })
+        
+        return jsonify({
+            "type": "table_structure",
+            "data": {
+                "table_info": table_info,
+                "columns": formatted_columns,
+                "indexes": indexes
+            }
+        })
+    except Exception as e:
+        return jsonify({"type": "error", "error": str(e)})
+
+@app.route('/api/v0/data_sources/<int:data_source_id>/refresh_metadata', methods=['POST'])
+def refresh_metadata(data_source_id):
+    """更新数据源的元数据"""
+    try:
+        conn = mysql.connector.connect(**mysql_config)
+        cursor = conn.cursor(dictionary=True)
+        
+        # 获取数据源信息
+        cursor.execute("SELECT * FROM data_sources WHERE id = %s", (data_source_id,))
+        data_source = cursor.fetchone()
+        
+        if not data_source:
+            cursor.close()
+            conn.close()
+            return jsonify({"type": "error", "error": "数据源不存在"})
+        
+        # 根据数据源类型连接数据库
+        if data_source['type'] == 'mysql':
+            # 连接 MySQL 数据库
+            db_config = {
+                'host': data_source['mysql_host'],
+                'port': data_source['mysql_port'],
+                'user': data_source['mysql_username'],
+                'password': data_source['mysql_password'],
+                'database': data_source['mysql_database']
+            }
+            db_conn = mysql.connector.connect(**db_config)
+            db_cursor = db_conn.cursor(dictionary=True)
+            
+            # 获取所有表
+            db_cursor.execute("SHOW TABLES")
+            tables = [list(row.values())[0] for row in db_cursor.fetchall()]
+            
+            # 获取每个表的列信息
+            for table_name in tables:
+                # 获取表的 DDL
+                db_cursor.execute(f"SHOW CREATE TABLE `{table_name}`")
+                create_table_row = db_cursor.fetchone()
+                table_ddl = list(create_table_row.values())[1] if create_table_row else ''
+                
+                # 检查表是否已存在于 metadata_tables 中
+                cursor.execute("SELECT id FROM metadata_tables WHERE data_source_id = %s AND table_name = %s", 
+                             (data_source_id, table_name))
+                existing_table = cursor.fetchone()
+                
+                if existing_table:
+                    table_id = existing_table['id']
+                    # 更新表信息（包括 DDL）
+                    cursor.execute("""
+                        UPDATE metadata_tables 
+                        SET table_name = %s, table_ddl = %s, updated_at = NOW()
+                        WHERE id = %s
+                    """, (table_name, table_ddl, table_id))
+                    
+                    # 删除旧的列信息
+                    cursor.execute("DELETE FROM metadata_columns WHERE table_id = %s", (table_id,))
+                else:
+                    # 插入新表信息（包括 DDL）
+                    cursor.execute("""
+                        INSERT INTO metadata_tables (data_source_id, table_name, table_ddl, created_at, updated_at)
+                        VALUES (%s, %s, %s, NOW(), NOW())
+                    """, (data_source_id, table_name, table_ddl))
+                    table_id = cursor.lastrowid
+                
+                # 获取列信息
+                db_cursor.execute(f"SHOW FULL COLUMNS FROM `{table_name}`")
+                columns = db_cursor.fetchall()
+                
+                # 插入列信息
+                for col in columns:
+                    is_primary = 'PRI' in col.get('Key', '')
+                    is_nullable = col.get('Null', 'YES') == 'YES'
+                    
+                    cursor.execute("""
+                        INSERT INTO metadata_columns 
+                        (table_id, column_name, data_type, column_description, is_primary_key, is_nullable, created_at, updated_at)
+                        VALUES (%s, %s, %s, %s, %s, %s, NOW(), NOW())
+                    """, (
+                        table_id,
+                        col['Field'],
+                        col['Type'],
+                        col.get('Comment', ''),
+                        1 if is_primary else 0,
+                        1 if is_nullable else 0
+                    ))
+            
+            db_cursor.close()
+            db_conn.close()
+            
+            # 提交事务
+            conn.commit()
+        elif data_source['type'] == 'sqlite':
+            import sqlite3
+            
+            # 连接 SQLite 数据库
+            sqlite_path = data_source['sqlite_path']
+            db_conn = sqlite3.connect(sqlite_path)
+            db_cursor = db_conn.cursor()
+            
+            # 获取所有表
+            db_cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            tables = [row[0] for row in db_cursor.fetchall()]
+            
+            # 获取每个表的列信息
+            for table_name in tables:
+                # 获取表的 DDL
+                db_cursor.execute(f"SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (table_name,))
+                ddl_row = db_cursor.fetchone()
+                table_ddl = ddl_row[0] if ddl_row else ''
+                
+                # 检查表是否已存在于 metadata_tables 中
+                cursor.execute("SELECT id FROM metadata_tables WHERE data_source_id = %s AND table_name = %s", 
+                             (data_source_id, table_name))
+                existing_table = cursor.fetchone()
+                
+                if existing_table:
+                    table_id = existing_table['id']
+                    # 更新表信息（包括 DDL）
+                    cursor.execute("""
+                        UPDATE metadata_tables 
+                        SET table_name = %s, table_ddl = %s, updated_at = NOW()
+                        WHERE id = %s
+                    """, (table_name, table_ddl, table_id))
+                    
+                    # 删除旧的列信息
+                    cursor.execute("DELETE FROM metadata_columns WHERE table_id = %s", (table_id,))
+                else:
+                    # 插入新表信息（包括 DDL）
+                    cursor.execute("""
+                        INSERT INTO metadata_tables (data_source_id, table_name, table_ddl, created_at, updated_at)
+                        VALUES (%s, %s, %s, NOW(), NOW())
+                    """, (data_source_id, table_name, table_ddl))
+                    table_id = cursor.lastrowid
+                
+                # 获取列信息
+                db_cursor.execute(f"PRAGMA table_info({table_name})")
+                columns = db_cursor.fetchall()
+                
+                # 插入列信息
+                for col in columns:
+                    # col: (cid, name, type, notnull, dflt_value, pk)
+                    cid, col_name, col_type, notnull, dflt_value, pk = col
+                    is_primary = pk == 1
+                    is_nullable = notnull == 0
+                    
+                    cursor.execute("""
+                        INSERT INTO metadata_columns 
+                        (table_id, column_name, data_type, column_description, is_primary_key, is_nullable, created_at, updated_at)
+                        VALUES (%s, %s, %s, %s, %s, %s, NOW(), NOW())
+                    """, (
+                        table_id,
+                        col_name,
+                        col_type,
+                        '',  # SQLite 没有注释字段
+                        1 if is_primary else 0,
+                        1 if is_nullable else 0
+                    ))
+            
+            db_cursor.close()
+            db_conn.close()
+            
+            # 提交事务
+            conn.commit()
+        else:
+            cursor.close()
+            conn.close()
+            return jsonify({"type": "error", "error": "不支持的数据源类型"})
+        
+        cursor.close()
+        conn.close()
+        
+        return jsonify({
+            "type": "success",
+            "message": f"已更新 {len(tables)} 个表的元数据"
+        })
     except Exception as e:
         return jsonify({"type": "error", "error": str(e)})
 

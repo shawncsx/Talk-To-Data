@@ -52,6 +52,22 @@
         <aside class="w-80 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col hidden lg:flex overflow-hidden">
           <!-- 可滚动区域 -->
           <div class="flex-1 overflow-y-auto">
+            <!-- 数据源选择器 -->
+            <div class="p-4 border-b border-gray-200 dark:border-gray-700">
+              <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 uppercase tracking-wider">
+                选择数据源
+              </h3>
+              <select
+                v-model="selectedDataSourceId"
+                @change="handleDataSourceChange"
+                class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+              >
+                <option v-for="source in dataSources" :key="source.id" :value="source.id">
+                  {{ source.name }} ({{ source.type === 'mysql' ? 'MySQL' : 'SQLite' }})
+                </option>
+              </select>
+            </div>
+            
             <!-- Sample Questions -->
             <div class="p-4 border-b border-gray-200 dark:border-gray-700">
               <QuestionList
@@ -195,6 +211,18 @@
               </li>
               <li>
                 <button 
+                  @click="activeMenu = 'metadata'"
+                  class="w-full text-left px-3 py-2 rounded-lg transition-colors flex items-center gap-2"
+                  :class="activeMenu === 'metadata' ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-800'"
+                >
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                  </svg>
+                  元数据管理
+                </button>
+              </li>
+              <li>
+                <button 
                   @click="activeMenu = 'knowledge-base'"
                   class="w-full text-left px-3 py-2 rounded-lg transition-colors flex items-center gap-2"
                   :class="activeMenu === 'knowledge-base' ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-800'"
@@ -235,6 +263,224 @@
             <h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-6">数据源管理</h2>
             <DataSourceManager />
           </div>
+          
+          <!-- 元数据管理 -->
+          <div v-else-if="activeMenu === 'metadata'" class="h-full flex overflow-hidden">
+            <!-- 左侧目录树 -->
+            <div class="w-1/4 border-r border-gray-200 dark:border-gray-700 p-4 overflow-y-auto">
+              <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">数据源目录</h3>
+              <!-- 目录树 -->
+              <div class="space-y-1">
+                <!-- 根节点：数据源 -->
+                <div 
+                  class="font-medium text-gray-900 dark:text-white mb-2 py-2 px-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer flex items-center"
+                  @click="toggleRoot"
+                >
+                  <svg class="w-4 h-4 mr-2 transition-transform" :class="rootExpanded ? 'transform rotate-90' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                  </svg>
+                  数据源
+                </div>
+                <!-- 数据源子节点 -->
+                <div v-if="rootExpanded" class="pl-4 space-y-1">
+                  <template v-for="source in dataSources" :key="source.id">
+                    <div 
+                      class="py-2 px-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer flex items-center"
+                      :class="selectedDataSource?.id === source.id ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400' : ''"
+                      @click="handleDataSourceClick(source)"
+                    >
+                      <svg class="w-4 h-4 mr-2 transition-transform" :class="expandedDataSourceId === source.id ? 'transform rotate-90' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                      </svg>
+                      {{ source.name }}
+                    </div>
+                    <!-- 库表节点（展开的数据源下的库表） -->
+                    <div v-if="expandedDataSourceId === source.id && tables.length > 0" class="pl-8 mt-1 space-y-1 border-l-2 border-gray-300 dark:border-gray-600">
+                      <div 
+                        v-for="table in tables" 
+                        :key="table.id" 
+                        class="py-2 px-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer text-sm"
+                        :class="selectedTable?.id === table.id ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' : ''"
+                        @click.stop="handleTableClick(table)"
+                      >
+                        {{ table.table_name }}
+                      </div>
+                    </div>
+                  </template>
+                  <div v-if="dataSources.length === 0" class="py-4 text-center text-gray-500 dark:text-gray-400 text-sm">
+                    暂无数据源
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <!-- 右侧功能区 -->
+            <div class="flex-1 p-6 overflow-y-auto">
+              <!-- 数据源列表（未选择数据源时显示） -->
+              <div v-if="!selectedDataSource" class="h-full">
+                <h3 class="text-xl font-semibold text-gray-900 dark:text-white mb-4">数据源列表</h3>
+                <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+                  <div class="overflow-x-auto">
+                    <table class="w-full text-sm text-left text-gray-500 dark:text-gray-400">
+                      <thead class="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-400">
+                        <tr>
+                          <th scope="col" class="px-6 py-3">名称</th>
+                          <th scope="col" class="px-6 py-3">类型</th>
+                          <th scope="col" class="px-6 py-3">状态</th>
+                          <th scope="col" class="px-6 py-3">描述</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr v-for="source in dataSources" :key="source.id" class="bg-white border-b dark:bg-gray-800 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700">
+                          <td class="px-6 py-4 font-medium text-gray-900 dark:text-white">{{ source.name }}</td>
+                          <td class="px-6 py-4">{{ source.type === 'mysql' ? 'MySQL' : 'SQLite' }}</td>
+                          <td class="px-6 py-4">
+                            <span :class="{
+                              'px-2 py-1 text-xs font-medium rounded-full': true,
+                              'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200': source.status === 'active',
+                              'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200': source.status === 'inactive'
+                            }">
+                              {{ source.status === 'active' ? '活跃' : '非活跃' }}
+                            </span>
+                          </td>
+                          <td class="px-6 py-4 max-w-xs truncate" :title="source.description">{{ source.description || '-' }}</td>
+                        </tr>
+                        <tr v-if="dataSources.length === 0">
+                          <td colspan="4" class="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
+                            暂无数据源
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+              
+              <!-- 库表列表（选择数据源时显示） -->
+              <div v-else-if="!selectedTable" class="h-full">
+                <div class="flex items-center justify-between mb-4">
+                  <h3 class="text-xl font-semibold text-gray-900 dark:text-white">
+                    {{ selectedDataSource.name }} 的库表
+                  </h3>
+                  <button 
+                    class="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
+                    @click="handleRefreshMetadata"
+                  >
+                    更新元数据
+                  </button>
+                </div>
+                <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+                  <div class="overflow-x-auto">
+                    <table class="w-full text-sm text-left text-gray-500 dark:text-gray-400">
+                      <thead class="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-400">
+                        <tr>
+                          <th scope="col" class="px-6 py-3">表名</th>
+                          <th scope="col" class="px-6 py-3">描述</th>
+                          <th scope="col" class="px-6 py-3">操作</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr v-for="table in tables" :key="table.id" class="bg-white border-b dark:bg-gray-800 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700">
+                          <td class="px-6 py-4 font-medium text-gray-900 dark:text-white">{{ table.table_name }}</td>
+                          <td class="px-6 py-4 max-w-xs truncate" :title="table.table_description">{{ table.table_description || '-' }}</td>
+                          <td class="px-6 py-4">
+                            <button class="text-blue-600 dark:text-blue-400 hover:underline mr-4">查看</button>
+                            <button class="text-green-600 dark:text-green-400 hover:underline">编辑</button>
+                          </td>
+                        </tr>
+                        <tr v-if="tables.length === 0">
+                          <td colspan="3" class="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
+                            暂无库表
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+              
+              <!-- 库表结构（选择库表时显示） -->
+              <div v-else class="h-full">
+                <div class="flex items-center justify-between mb-4">
+                  <div class="flex items-center space-x-4">
+                    <button 
+                      class="px-3 py-1 text-sm bg-gray-200 dark:bg-gray-700 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+                      @click="selectedTable = null"
+                    >
+                      ← 返回
+                    </button>
+                    <h3 class="text-xl font-semibold text-gray-900 dark:text-white">
+                      {{ selectedTable.table_name }} - 表结构
+                    </h3>
+                  </div>
+                </div>
+                
+                <!-- 字段信息 -->
+                <div class="mb-6">
+                  <h4 class="text-lg font-semibold text-gray-900 dark:text-white mb-3">字段信息</h4>
+                  <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+                    <div class="overflow-x-auto">
+                      <table class="w-full text-sm text-left text-gray-500 dark:text-gray-400">
+                        <thead class="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-400">
+                          <tr>
+                            <th scope="col" class="px-4 py-3">字段名</th>
+                            <th scope="col" class="px-4 py-3">类型</th>
+                            <th scope="col" class="px-4 py-3">描述</th>
+                            <th scope="col" class="px-4 py-3">键</th>
+                            <th scope="col" class="px-4 py-3">可空</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr v-for="col in tableStructure?.columns" :key="col.name" class="bg-white border-b dark:bg-gray-800 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700">
+                            <td class="px-4 py-3 font-medium text-gray-900 dark:text-white">{{ col.name }}</td>
+                            <td class="px-4 py-3 font-mono text-xs">{{ col.type }}</td>
+                            <td class="px-4 py-3">{{ col.description }}</td>
+                            <td class="px-4 py-3">{{ col.key || '-' }}</td>
+                            <td class="px-4 py-3">{{ col.nullable ? '是' : '否' }}</td>
+                          </tr>
+                          <tr v-if="!tableStructure?.columns || tableStructure.columns.length === 0">
+                            <td colspan="5" class="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
+                              暂无字段信息
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+                
+                <!-- 索引信息 -->
+                <div>
+                  <h4 class="text-lg font-semibold text-gray-900 dark:text-white mb-3">索引信息</h4>
+                  <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+                    <div class="overflow-x-auto">
+                      <table class="w-full text-sm text-left text-gray-500 dark:text-gray-400">
+                        <thead class="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-400">
+                          <tr>
+                            <th scope="col" class="px-4 py-3">索引名</th>
+                            <th scope="col" class="px-4 py-3">列</th>
+                            <th scope="col" class="px-4 py-3">类型</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr v-for="idx in tableStructure?.indexes" :key="idx.name" class="bg-white border-b dark:bg-gray-800 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700">
+                            <td class="px-4 py-3 font-medium text-gray-900 dark:text-white">{{ idx.name }}</td>
+                            <td class="px-4 py-3 font-mono text-xs">{{ idx.columns.join(', ') }}</td>
+                            <td class="px-4 py-3 font-mono text-xs">{{ idx.type }}</td>
+                          </tr>
+                          <tr v-if="!tableStructure?.indexes || tableStructure.indexes.length === 0">
+                            <td colspan="3" class="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
+                              暂无索引信息
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </main>
@@ -249,6 +495,7 @@ import ChatInput from '@/components/ChatInput.vue'
 import QuestionList from '@/components/QuestionList.vue'
 import KnowledgeBase from '@/components/KnowledgeBase.vue'
 import DataSourceManager from '@/components/DataSourceManager.vue'
+import api from '@/services/api'
 
 const chatStore = useChatStore()
 const inputText = ref('')
@@ -256,6 +503,178 @@ const messagesContainer = ref(null)
 const isDark = ref(false)
 const isAdminPage = ref(false)
 const activeMenu = ref('knowledge-base')
+const dataSources = ref([])
+const selectedDataSource = ref(null)
+const tables = ref([])
+const expandedDataSourceId = ref(null)
+const selectedTable = ref(null)
+const tableStructure = ref(null)
+const rootExpanded = ref(true)
+
+// 对话界面数据源选择
+const selectedDataSourceId = ref('')
+
+// 加载数据源列表（对话界面用）
+const loadDataSourceList = async () => {
+  try {
+    const response = await api.getDataSources()
+    if (response.type === 'data_sources') {
+      dataSources.value = response.data
+      
+      // 优先使用上次选中的数据源
+      if (selectedDataSourceId.value) {
+        const source = dataSources.value.find(s => s.id === parseInt(selectedDataSourceId.value))
+        if (source) {
+          selectedDataSource.value = source
+          return
+        }
+      }
+      
+      // 如果没有上次选择，自动选择默认数据源
+      const defaultSource = dataSources.value.find(s => s.is_default)
+      if (defaultSource) {
+        selectedDataSourceId.value = defaultSource.id.toString()
+        selectedDataSource.value = defaultSource
+        console.log('自动选择默认数据源:', defaultSource.name)
+      }
+    }
+  } catch (error) {
+    console.error('Error loading data sources:', error)
+  }
+}
+
+// 处理数据源选择变化
+const handleDataSourceChange = () => {
+  if (selectedDataSourceId.value) {
+    const source = dataSources.value.find(s => s.id === parseInt(selectedDataSourceId.value))
+    selectedDataSource.value = source
+    if (source) {
+      console.log('已选择数据源:', source.name)
+      // 这里可以添加通知后端或其他处理逻辑
+    }
+  } else {
+    selectedDataSource.value = null
+  }
+}
+
+// 加载数据源列表
+const loadDataSources = async () => {
+  try {
+    const response = await api.getDataSources()
+    if (response.type === 'data_sources') {
+      dataSources.value = response.data
+    }
+  } catch (error) {
+    console.error('Error loading data sources:', error)
+  }
+}
+
+// 监听菜单切换，当切换到元数据管理时加载数据源
+watch(activeMenu, (newMenu) => {
+  if (newMenu === 'metadata') {
+    loadDataSources()
+  }
+})
+
+// 处理根节点点击事件
+const handleRootNodeClick = () => {
+  // 点击根节点时重新加载数据源列表
+  loadDataSources()
+  selectedDataSource.value = null
+  tables.value = []
+  expandedDataSourceId.value = null
+}
+
+// 切换根节点展开/收起状态
+const toggleRoot = () => {
+  rootExpanded.value = !rootExpanded.value
+  if (!rootExpanded.value) {
+    // 收起时清空选中的项
+    selectedDataSource.value = null
+    tables.value = []
+    expandedDataSourceId.value = null
+  } else {
+    // 展开时重新加载数据源
+    loadDataSources()
+  }
+}
+
+// 处理数据源子节点点击事件
+const handleDataSourceClick = (source) => {
+  // 切换展开/收起状态
+  if (expandedDataSourceId.value === source.id) {
+    // 当前是展开状态，点击后收起
+    expandedDataSourceId.value = null
+  } else {
+    // 当前是收起状态，点击后展开
+    // 先清空库表数据和选中的库表，避免显示上一个数据源的库表
+    tables.value = []
+    selectedTable.value = null
+    tableStructure.value = null
+    selectedDataSource.value = source
+    loadTables(source.id)
+    expandedDataSourceId.value = source.id
+  }
+}
+
+// 处理库表节点点击事件
+const handleTableClick = (table) => {
+  selectedTable.value = table
+  loadTableStructure(table.id)
+}
+
+// 处理更新元数据
+const handleRefreshMetadata = async () => {
+  if (!selectedDataSource.value) {
+    alert('请先选择一个数据源')
+    return
+  }
+  
+  try {
+    const response = await api.refreshMetadata(selectedDataSource.value.id)
+    if (response.type === 'success') {
+      alert(response.message)
+      // 重新加载库表列表
+      await loadTables(selectedDataSource.value.id)
+    } else {
+      alert('更新元数据失败：' + response.error)
+    }
+  } catch (error) {
+    console.error('Error refreshing metadata:', error)
+    alert('更新元数据失败：' + error.message)
+  }
+}
+
+// 加载库表结构
+const loadTableStructure = async (tableId) => {
+  try {
+    // 调用 API 获取库表结构
+    const response = await api.getTableStructure(tableId)
+    if (response.type === 'table_structure') {
+      tableStructure.value = response.data
+    } else {
+      console.error('Failed to load table structure:', response)
+      tableStructure.value = null
+    }
+  } catch (error) {
+    console.error('Error loading table structure:', error)
+    tableStructure.value = null
+  }
+}
+
+// 加载数据源的库表列表
+const loadTables = async (dataSourceId) => {
+  try {
+    // 调用API获取库表列表
+    const response = await api.getDataSourceTables(dataSourceId)
+    if (response.type === 'tables') {
+      tables.value = response.data
+    }
+  } catch (error) {
+    console.error('Error loading tables:', error)
+    tables.value = []
+  }
+}
 
 // Initialize theme
 onMounted(() => {
@@ -268,6 +687,9 @@ onMounted(() => {
   // Load initial data
   chatStore.loadSampleQuestions()
   chatStore.loadQuestionHistory()
+  
+  // Load data sources for selection
+  loadDataSourceList()
 })
 
 // Watch messages and scroll to bottom

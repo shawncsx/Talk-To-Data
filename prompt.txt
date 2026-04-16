@@ -1,0 +1,15 @@
+目前的TalkToData数据库连接参数是写死在代码中的，希望改为在配置文件中读取参数
+要求：
+1.在项目目录下创建配置文件，参照nginx配置文件nginx.conf的格式，创建talktodata.conf。
+2.配置文件中的参数分为开发环境参数和生产环境参数两部分；
+3.在开发环境参数中配置开发环境的TalkToData数据库连接参数和LLM服务平台连接参数；
+4.在生产环境参数中配置生产环境的TalkToData数据库连接参数和LLM服务平台连接参数；
+5.如果运行环境是Linux环境，则读取生产环境的参数，否则读取开发环境的参数。
+
+mysql_config = {
+    "host": "47.120.40.157",
+    "port": 3306,
+    "user": "root",
+    "password": "Shawn#6ge1",
+    "database": "talktodata"
+}

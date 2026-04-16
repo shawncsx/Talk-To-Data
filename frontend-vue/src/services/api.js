@@ -109,6 +109,21 @@ export const api = {
   async testDataSource(data) {
     const response = await apiClient.post('/data_sources/test', data)
     return response.data
+  },
+
+  async getDataSourceTables(dataSourceId) {
+    const response = await apiClient.get(`/data_sources/${dataSourceId}/tables`)
+    return response.data
+  },
+
+  async getTableStructure(tableId) {
+    const response = await apiClient.get(`/data_sources/tables/${tableId}/structure`)
+    return response.data
+  },
+
+  async refreshMetadata(dataSourceId) {
+    const response = await apiClient.post(`/data_sources/${dataSourceId}/refresh_metadata`)
+    return response.data
   }
 }
 
