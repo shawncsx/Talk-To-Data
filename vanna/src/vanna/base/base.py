@@ -57,11 +57,13 @@ from abc import ABC, abstractmethod
 from typing import List, Tuple, Union
 from urllib.parse import urlparse
 
+from annotated_types import IsNotNan
 import pandas as pd
 import plotly
 import plotly.express as px
 import plotly.graph_objects as go
 import requests
+from sqlalchemy.dialects.postgresql import dialect
 import sqlparse
 
 from ..exceptions import DependencyError, ImproperlyConfigured, ValidationError
@@ -599,10 +601,14 @@ class VannaBase(ABC):
             any: The prompt for the LLM to generate SQL.
         """
 
-        if initial_prompt is None:
-            initial_prompt = f"You are a {self.dialect} expert. " + \
-            "Please help to generate a SQL query to answer the question. Your response should ONLY be based on the given context and follow the response guidelines and format instructions. "
+        dialect_prompt = f"You are a {self.dialect} expert. " + \
+        "Please help to generate a SQL query to answer the question. Your response should ONLY be based on the given context and follow the response guidelines and format instructions. "
 
+        if initial_prompt is None:
+            initial_prompt = dialect_prompt
+        else:
+            initial_prompt+= dialect_prompt
+       
         initial_prompt = self.add_ddl_to_prompt(
             initial_prompt, ddl_list, max_tokens=self.max_tokens
         )

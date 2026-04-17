@@ -49,7 +49,8 @@ if sys.platform.startswith("linux"):
         "api_key": config_parser.get('LLM_server', 'api_key'),
         "model": config_parser.get('LLM_server', 'model'),  # 阿里云百炼平台模型
         "options": config_parser.get('LLM_server', 'options'),  # 控制生成随机性
-        "initial_prompt": "Please answer me in Chinese."
+        "initial_prompt": "Please answer me in Chinese.",
+        "language": "Chinese"
     }
 else:
     chromadb_path=r'D:\shawn\Computer\git\Talk-To-Data\data\chroma_db' 
@@ -67,7 +68,8 @@ else:
         "api_key": config_parser.get('LLM_server_dev', 'api_key'),
         "model": config_parser.get('LLM_server_dev', 'model'),  # 阿里云百炼平台模型
         "options": config_parser.get('LLM_server_dev', 'options'),  # 控制生成随机性
-        "initial_prompt": "Please answer me in Chinese."
+        "initial_prompt": "Please answer me in Chinese.",
+        "language": "Chinese"
     } 
 
 vn = MyVanna(config=config)
